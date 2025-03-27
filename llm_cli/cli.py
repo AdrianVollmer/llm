@@ -1,71 +1,12 @@
-import asyncio
+# Avoid top-level imports as much as possible for better performance during start-up
+
 import click
 from click_default_group import DefaultGroup
-from dataclasses import asdict
-import io
-import json
-import os
-from llm import (
-    Attachment,
-    AsyncConversation,
-    AsyncKeyModel,
-    AsyncResponse,
-    Collection,
-    Conversation,
-    Response,
-    Template,
-    UnknownModelError,
-    KeyModel,
-    encode,
-    get_async_model,
-    get_default_model,
-    get_default_embedding_model,
-    get_embedding_models_with_aliases,
-    get_embedding_model_aliases,
-    get_embedding_model,
-    get_plugins,
-    get_template_loaders,
-    get_model,
-    get_model_aliases,
-    get_models_with_aliases,
-    user_dir,
-    set_alias,
-    set_default_model,
-    set_default_embedding_model,
-    remove_alias,
-)
-from llm.models import _BaseConversation
-
-from .migrations import migrate
-from .plugins import pm, load_plugins
-from .utils import (
-    extract_fenced_code_block,
-    find_unused_key,
-    make_schema_id,
-    mimetype_from_path,
-    mimetype_from_string,
-    multi_schema,
-    output_rows_as_json,
-    resolve_schema_input,
-    schema_dsl,
-    schema_summary,
-    token_usage_string,
-    truncate_string,
-)
-import base64
-import httpx
-import pathlib
-import pydantic
-import readline
-from runpy import run_module
-import shutil
-import sqlite_utils
-from sqlite_utils.utils import rows_from_file, Format
-import sys
-import textwrap
-from typing import cast, Optional, Iterable, Union, Tuple, Any
 import warnings
-import yaml
+from typing import cast, Optional, Iterable, Union, Tuple, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from llm.models import _BaseConversation
 
 warnings.simplefilter("ignore", ResourceWarning)
 
@@ -76,6 +17,19 @@ class AttachmentType(click.ParamType):
     name = "attachment"
 
     def convert(self, value, param, ctx):
+        import click
+        from llm import (
+            Attachment,
+        )
+
+        from llm.utils import (
+            mimetype_from_path,
+            mimetype_from_string,
+        )
+        import httpx
+        import pathlib
+        import sys
+
         if value == "-":
             content = sys.stdin.buffer.read()
             # Try to guess type
@@ -105,6 +59,14 @@ class AttachmentType(click.ParamType):
 
 
 def attachment_types_callback(ctx, param, values):
+    import click
+    from llm import (
+        Attachment,
+    )
+
+    import pathlib
+    import sys
+
     collected = []
     for value, mimetype in values:
         if "://" in value:
@@ -124,6 +86,9 @@ def attachment_types_callback(ctx, param, values):
 
 
 def json_validator(object_name):
+    import click
+    import json
+
     def validator(ctx, param, value):
         if value is None:
             return value
@@ -305,6 +270,33 @@ def prompt(
     \b
         llm 'JavaScript function for reversing a string' -x
     """
+    import asyncio
+    import click
+    import os
+    from llm import (
+        AsyncKeyModel,
+        AsyncResponse,
+        Template,
+        UnknownModelError,
+        KeyModel,
+        get_async_model,
+        get_default_model,
+        get_model,
+        get_model_aliases,
+        get_models_with_aliases,
+    )
+
+    from llm.migrations import migrate
+    from llm.utils import (
+        extract_fenced_code_block,
+        multi_schema,
+        resolve_schema_input,
+    )
+    import pydantic
+    import sqlite_utils
+    import sys
+    import yaml
+
     if log and no_log:
         raise click.ClickException("--log and --no-log are mutually exclusive")
 
@@ -320,9 +312,7 @@ def prompt(
             if all(model_with_aliases.matches(q) for q in queries):
                 matches.append(model_with_aliases.model.model_id)
         if not matches:
-            raise click.ClickException(
-                "No model found matching queries {}".format(", ".join(queries))
-            )
+            raise click.ClickException("No model found matching queries {}".format(", ".join(queries)))
         model_id = min(matches, key=len)
 
     if schema_multi:
@@ -350,14 +340,7 @@ def prompt(
                 bits.append(prompt)
             prompt = " ".join(bits)
 
-        if (
-            prompt is None
-            and not save
-            and sys.stdin.isatty()
-            and not attachments
-            and not attachment_types
-            and not schema
-        ):
+        if prompt is None and not save and sys.stdin.isatty() and not attachments and not attachment_types and not schema:
             # Hang waiting for input to stdin (unless --save)
             prompt = sys.stdin.read()
         return prompt
@@ -374,9 +357,7 @@ def prompt(
             if var:
                 disallowed_options.append(option)
         if disallowed_options:
-            raise click.ClickException(
-                "--save cannot be used with {}".format(", ".join(disallowed_options))
-            )
+            raise click.ClickException("--save cannot be used with {}".format(", ".join(disallowed_options)))
         path = template_dir() / f"{save}.yaml"
         to_save = {}
         if model_id:
@@ -401,11 +382,7 @@ def prompt(
             # Need to validate and convert their types first
             model = get_model(model_id or get_default_model())
             try:
-                to_save["options"] = dict(
-                    (key, value)
-                    for key, value in model.Options(**dict(options))
-                    if value is not None
-                )
+                to_save["options"] = dict((key, value) for key, value in model.Options(**dict(options)) if value is not None)
             except pydantic.ValidationError as ex:
                 raise click.ClickException(render_errors(ex.errors()))
         path.write_text(
@@ -486,11 +463,7 @@ def prompt(
     if options:
         # Validate with pydantic
         try:
-            validated_options = dict(
-                (key, value)
-                for key, value in model.Options(**dict(options))
-                if value is not None
-            )
+            validated_options = dict((key, value) for key, value in model.Options(**dict(options)) if value is not None)
         except pydantic.ValidationError as ex:
             raise click.ClickException(render_errors(ex.errors()))
 
@@ -544,9 +517,7 @@ def prompt(
                     )
                     text = await response.text()
                     if extract or extract_last:
-                        text = (
-                            extract_fenced_code_block(text, last=extract_last) or text
-                        )
+                        text = extract_fenced_code_block(text, last=extract_last) or text
                     print(text)
                 return response
 
@@ -574,9 +545,7 @@ def prompt(
         raise click.ClickException(str(ex))
     except Exception as ex:
         # All other exceptions should raise in pytest, show to user otherwise
-        if getattr(sys, "_called_from_test", False) or os.environ.get(
-            "LLM_RAISE_ERRORS", None
-        ):
+        if getattr(sys, "_called_from_test", False) or os.environ.get("LLM_RAISE_ERRORS", None):
             raise
         raise click.ClickException(str(ex))
 
@@ -586,9 +555,7 @@ def prompt(
     if usage:
         # Show token usage to stderr in yellow
         click.echo(
-            click.style(
-                "Token usage: {}".format(response.token_usage()), fg="yellow", bold=True
-            ),
+            click.style("Token usage: {}".format(response.token_usage()), fg="yellow", bold=True),
             err=True,
         )
 
@@ -646,6 +613,22 @@ def chat(
     """
     Hold an ongoing chat with a model.
     """
+    import click
+    from llm import (
+        Conversation,
+        Template,
+        UnknownModelError,
+        KeyModel,
+        get_default_model,
+        get_model,
+    )
+
+    from llm.migrations import migrate
+    import pydantic
+    import readline
+    import sqlite_utils
+    import sys
+
     # Left and right arrow keys to move cursor:
     if sys.platform != "win32":
         readline.parse_and_bind("\\e[D: backward-char")
@@ -700,11 +683,7 @@ def chat(
     validated_options = {}
     if options:
         try:
-            validated_options = dict(
-                (key, value)
-                for key, value in model.Options(**dict(options))
-                if value is not None
-            )
+            validated_options = dict((key, value) for key, value in model.Options(**dict(options)) if value is not None)
         except pydantic.ValidationError as ex:
             raise click.ClickException(render_errors(ex.errors()))
 
@@ -757,9 +736,18 @@ def chat(
         print("")
 
 
-def load_conversation(
-    conversation_id: Optional[str], async_=False
-) -> Optional[_BaseConversation]:
+def load_conversation(conversation_id: Optional[str], async_=False) -> Optional["_BaseConversation"]:
+    import click
+    from llm import (
+        AsyncConversation,
+        AsyncResponse,
+        Conversation,
+        Response,
+    )
+
+    from llm.migrations import migrate
+    import sqlite_utils
+
     db = sqlite_utils.Database(logs_db_path())
     migrate(db)
     if conversation_id is None:
@@ -772,16 +760,12 @@ def load_conversation(
     try:
         row = cast(sqlite_utils.db.Table, db["conversations"]).get(conversation_id)
     except sqlite_utils.db.NotFoundError:
-        raise click.ClickException(
-            "No conversation found with id={}".format(conversation_id)
-        )
+        raise click.ClickException("No conversation found with id={}".format(conversation_id))
     # Inflate that conversation
     conversation_class = AsyncConversation if async_ else Conversation
     response_class = AsyncResponse if async_ else Response
     conversation = conversation_class.from_row(row)
-    for response in db["responses"].rows_where(
-        "conversation_id = ?", [conversation_id]
-    ):
+    for response in db["responses"].rows_where("conversation_id = ?", [conversation_id]):
         conversation.responses.append(response_class.from_row(db, response))
     return conversation
 
@@ -798,6 +782,9 @@ def keys():
 @keys.command(name="list")
 def keys_list():
     "List names of all stored keys"
+    import json
+    from llm import user_dir
+
     path = user_dir() / "keys.json"
     if not path.exists():
         click.echo("No keys found")
@@ -811,6 +798,8 @@ def keys_list():
 @keys.command(name="path")
 def keys_path_command():
     "Output the path to the keys.json file"
+    from llm import user_dir
+
     click.echo(user_dir() / "keys.json")
 
 
@@ -825,6 +814,9 @@ def keys_get(name):
     \b
         export OPENAI_API_KEY=$(llm keys get openai)
     """
+    import json
+    from llm import user_dir
+
     path = user_dir() / "keys.json"
     if not path.exists():
         raise click.ClickException("No keys found")
@@ -848,6 +840,9 @@ def keys_set(name, value):
         $ llm keys set openai
         Enter key: ...
     """
+    import json
+    from llm import user_dir
+
     default = {"// Note": "This file stores secret API credentials. Do not share!"}
     path = user_dir() / "keys.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -880,6 +875,11 @@ def logs_path():
 @logs.command(name="status")
 def logs_status():
     "Show current status of database logging"
+    import click
+
+    from llm.migrations import migrate
+    import sqlite_utils
+
     path = logs_db_path()
     if not path.exists():
         click.echo("No log database found at {}".format(path))
@@ -893,14 +893,14 @@ def logs_status():
     click.echo("Found log database at {}".format(path))
     click.echo("Number of conversations logged:\t{}".format(db["conversations"].count))
     click.echo("Number of responses logged:\t{}".format(db["responses"].count))
-    click.echo(
-        "Database file size: \t\t{}".format(_human_readable_size(path.stat().st_size))
-    )
+    click.echo("Database file size: \t\t{}".format(_human_readable_size(path.stat().st_size)))
 
 
 @logs.command(name="on")
 def logs_turn_on():
     "Turn on logging for all prompts"
+    from llm import user_dir
+
     path = user_dir() / "logs-off"
     if path.exists():
         path.unlink()
@@ -909,6 +909,8 @@ def logs_turn_on():
 @logs.command(name="off")
 def logs_turn_off():
     "Turn off logging for all prompts"
+    from llm import user_dir
+
     path = user_dir() / "logs-off"
     path.touch()
 
@@ -989,18 +991,12 @@ order by prompt_attachments."order"
     "--schema-multi",
     help="JSON schema used for multiple results",
 )
-@click.option(
-    "--data", is_flag=True, help="Output newline-delimited JSON data for schema"
-)
+@click.option("--data", is_flag=True, help="Output newline-delimited JSON data for schema")
 @click.option("--data-array", is_flag=True, help="Output JSON array of data for schema")
 @click.option("--data-key", help="Return JSON objects from array in this key")
-@click.option(
-    "--data-ids", is_flag=True, help="Attach corresponding IDs to JSON objects"
-)
+@click.option("--data-ids", is_flag=True, help="Attach corresponding IDs to JSON objects")
 @click.option("-t", "--truncate", is_flag=True, help="Truncate long strings in output")
-@click.option(
-    "-s", "--short", is_flag=True, help="Shorter YAML output with truncated prompts"
-)
+@click.option("-s", "--short", is_flag=True, help="Shorter YAML output with truncated prompts")
 @click.option("-u", "--usage", is_flag=True, help="Include token usage")
 @click.option("-r", "--response", is_flag=True, help="Just output the last response")
 @click.option("-x", "--extract", is_flag=True, help="Extract first fenced code block")
@@ -1057,6 +1053,28 @@ def logs_list(
     json_output,
 ):
     "Show recent logged prompts and their responses"
+    import click
+    import json
+    from llm import (
+        UnknownModelError,
+        get_model,
+    )
+
+    from llm.migrations import migrate
+    from llm.utils import (
+        extract_fenced_code_block,
+        find_unused_key,
+        make_schema_id,
+        multi_schema,
+        output_rows_as_json,
+        resolve_schema_input,
+        token_usage_string,
+        truncate_string,
+    )
+    import pathlib
+    import sqlite_utils
+    import yaml
+
     path = pathlib.Path(path or logs_db_path())
     if not path.exists():
         raise click.ClickException("No log database found at {}".format(path))
@@ -1070,13 +1088,7 @@ def logs_list(
         schema = multi_schema(schema)
 
     if short and (json_output or response):
-        invalid = " or ".join(
-            [
-                flag[0]
-                for flag in (("--json", json_output), ("--response", response))
-                if flag[1]
-            ]
-        )
+        invalid = " or ".join([flag[0] for flag in (("--json", json_output), ("--response", response)) if flag[1]])
         raise click.ClickException("Cannot use --short and {} together".format(invalid))
 
     if response and not current_conversation and not conversation_id:
@@ -1084,11 +1096,7 @@ def logs_list(
 
     if current_conversation:
         try:
-            conversation_id = next(
-                db.query(
-                    "select conversation_id from responses order by id desc limit 1"
-                )
-            )["conversation_id"]
+            conversation_id = next(db.query("select conversation_id from responses order by id desc limit 1"))["conversation_id"]
         except StopIteration:
             # No conversations yet
             raise click.ClickException("No conversations found")
@@ -1176,11 +1184,7 @@ def logs_list(
             try:
                 decoded = json.loads(response)
                 new_items = []
-                if (
-                    isinstance(decoded, dict)
-                    and (data_key in decoded)
-                    and all(isinstance(item, dict) for item in decoded[data_key])
-                ):
+                if isinstance(decoded, dict) and (data_key in decoded) and all(isinstance(item, dict) for item in decoded[data_key]):
                     for item in decoded[data_key]:
                         new_items.append(item)
                 else:
@@ -1212,10 +1216,7 @@ def logs_list(
     if json_output:
         # Output as JSON if requested
         for row in rows:
-            row["attachments"] = [
-                {k: v for k, v in attachment.items() if k != "response_id"}
-                for attachment in attachments_by_id.get(row["id"], [])
-            ]
+            row["attachments"] = [{k: v for k, v in attachment.items() if k != "response_id"} for attachment in attachments_by_id.get(row["id"], [])]
         output = json.dumps(list(rows), indent=2)
     elif extract or extract_last:
         # Extract and return first code block
@@ -1236,12 +1237,8 @@ def logs_list(
         should_show_conversation = True
         for row in rows:
             if short:
-                system = truncate_string(
-                    row["system"] or "", 120, normalize_whitespace=True
-                )
-                prompt = truncate_string(
-                    row["prompt"] or "", 120, normalize_whitespace=True, keep_end=True
-                )
+                system = truncate_string(row["system"] or "", 120, normalize_whitespace=True)
+                prompt = truncate_string(row["prompt"] or "", 120, normalize_whitespace=True, keep_end=True)
                 cid = row["conversation_id"]
                 attachments = attachments_by_id.get(row["id"])
                 obj = {
@@ -1276,18 +1273,8 @@ def logs_list(
             click.echo(
                 "# {}{}\n{}".format(
                     row["datetime_utc"].split(".")[0],
-                    (
-                        "    conversation: {} id: {}".format(
-                            row["conversation_id"], row["id"]
-                        )
-                        if should_show_conversation
-                        else ""
-                    ),
-                    (
-                        "\nModel: **{}**\n".format(row["model"])
-                        if should_show_conversation
-                        else ""
-                    ),
+                    ("    conversation: {} id: {}".format(row["conversation_id"], row["id"]) if should_show_conversation else ""),
+                    ("\nModel: **{}**\n".format(row["model"]) if should_show_conversation else ""),
                 )
             )
             # In conversation log mode only show it for the first one
@@ -1299,26 +1286,16 @@ def logs_list(
                     click.echo("\n## System\n\n{}".format(row["system"]))
                 current_system = row["system"]
             if row["schema_json"]:
-                click.echo(
-                    "\n## Schema\n\n```json\n{}\n```".format(
-                        json.dumps(row["schema_json"], indent=2)
-                    )
-                )
+                click.echo("\n## Schema\n\n```json\n{}\n```".format(json.dumps(row["schema_json"], indent=2)))
             attachments = attachments_by_id.get(row["id"])
             if attachments:
                 click.echo("\n### Attachments\n")
                 for i, attachment in enumerate(attachments, 1):
                     if attachment["path"]:
                         path = attachment["path"]
-                        click.echo(
-                            "{}. **{}**: `{}`".format(i, attachment["type"], path)
-                        )
+                        click.echo("{}. **{}**: `{}`".format(i, attachment["type"], path))
                     elif attachment["url"]:
-                        click.echo(
-                            "{}. **{}**: {}".format(
-                                i, attachment["type"], attachment["url"]
-                            )
-                        )
+                        click.echo("{}. **{}**: {}".format(i, attachment["type"], attachment["url"]))
                     elif attachment["content_length"]:
                         click.echo(
                             "{}. **{}**: `<{} bytes>`".format(
@@ -1365,9 +1342,7 @@ _type_lookup = {
 
 
 @models.command(name="list")
-@click.option(
-    "--options", is_flag=True, help="Show options for each model, if available"
-)
+@click.option("--options", is_flag=True, help="Show options for each model, if available")
 @click.option("async_", "--async", is_flag=True, help="List async models")
 @click.option("--schemas", is_flag=True, help="List models that support schemas")
 @click.option(
@@ -1379,6 +1354,15 @@ _type_lookup = {
 @click.option("model_ids", "-m", "--model", help="Specific model IDs", multiple=True)
 def models_list(options, async_, schemas, query, model_ids):
     "List available models"
+    import click
+    from llm import (
+        get_default_model,
+        get_models_with_aliases,
+    )
+
+    import shutil
+    import textwrap
+
     models_that_have_shown_options = set()
     for model_with_aliases in get_models_with_aliases():
         if async_ and not model_with_aliases.async_model:
@@ -1388,9 +1372,7 @@ def models_list(options, async_, schemas, query, model_ids):
             if not all(model_with_aliases.matches(q) for q in query):
                 continue
         if model_ids:
-            ids_and_aliases = set(
-                [model_with_aliases.model.model_id] + model_with_aliases.aliases
-            )
+            ids_and_aliases = set([model_with_aliases.model.model_id] + model_with_aliases.aliases)
             if not ids_and_aliases.intersection(model_ids):
                 continue
         if schemas and not model_with_aliases.model.supports_schema:
@@ -1398,9 +1380,7 @@ def models_list(options, async_, schemas, query, model_ids):
         extra = ""
         if model_with_aliases.aliases:
             extra = " (aliases: {})".format(", ".join(model_with_aliases.aliases))
-        model = (
-            model_with_aliases.model if not async_ else model_with_aliases.async_model
-        )
+        model = model_with_aliases.model if not async_ else model_with_aliases.async_model
         output = str(model) + extra
         if options and model.Options.model_json_schema()["properties"]:
             output += "\n  Options:"
@@ -1408,18 +1388,10 @@ def models_list(options, async_, schemas, query, model_ids):
                 any_of = field.get("anyOf")
                 if any_of is None:
                     any_of = [{"type": field.get("type", "str")}]
-                types = ", ".join(
-                    [
-                        _type_lookup.get(item.get("type"), item.get("type", "str"))
-                        for item in any_of
-                        if item.get("type") != "null"
-                    ]
-                )
+                types = ", ".join([_type_lookup.get(item.get("type"), item.get("type", "str")) for item in any_of if item.get("type") != "null"])
                 bits = ["\n    ", name, ": ", types]
                 description = field.get("description", "")
-                if description and (
-                    model.__class__ not in models_that_have_shown_options
-                ):
+                if description and (model.__class__ not in models_that_have_shown_options):
                     wrapped = textwrap.wrap(description, 70)
                     bits.append("\n      ")
                     bits.extend("\n      ".join(wrapped))
@@ -1440,9 +1412,7 @@ def models_list(options, async_, schemas, query, model_ids):
             + (["async"] if model_with_aliases.async_model else [])
         )
         if options and features:
-            output += "\n  Features:\n{}".format(
-                "\n".join("  - {}".format(feature) for feature in features)
-            )
+            output += "\n  Features:\n{}".format("\n".join("  - {}".format(feature) for feature in features))
         click.echo(output)
     if not query and not options and not schemas and not model_ids:
         click.echo(f"Default: {get_default_model()}")
@@ -1452,6 +1422,13 @@ def models_list(options, async_, schemas, query, model_ids):
 @click.argument("model", required=False)
 def models_default(model):
     "Show or set the default model"
+    import click
+    from llm import (
+        get_default_model,
+        get_model,
+        set_default_model,
+    )
+
     if not model:
         click.echo(get_default_model())
         return
@@ -1475,6 +1452,8 @@ def templates():
 @templates.command(name="list")
 def templates_list():
     "List available prompt templates"
+    import click
+
     path = template_dir()
     pairs = []
     for file in path.glob("*.yaml"):
@@ -1503,6 +1482,10 @@ def templates_list():
 @click.argument("name")
 def templates_show(name):
     "Show the specified prompt template"
+    import click
+
+    import yaml
+
     template = load_template(name)
     click.echo(
         yaml.dump(
@@ -1517,6 +1500,8 @@ def templates_show(name):
 @click.argument("name")
 def templates_edit(name):
     "Edit the specified prompt template using the default $EDITOR"
+    import click
+
     # First ensure it exists
     path = template_dir() / f"{name}.yaml"
     if not path.exists():
@@ -1529,12 +1514,21 @@ def templates_edit(name):
 @templates.command(name="path")
 def templates_path():
     "Output the path to the templates directory"
+    import click
+
     click.echo(template_dir())
 
 
 @templates.command(name="loaders")
 def templates_loaders():
     "Show template loaders registered by plugins"
+    import click
+    from llm import (
+        get_template_loaders,
+    )
+
+    import textwrap
+
     found = False
     for prefix, loader in get_template_loaders().items():
         found = True
@@ -1573,6 +1567,17 @@ def schemas():
 @click.option("--full", is_flag=True, help="Output full schema contents")
 def schemas_list(path, queries, full):
     "List stored schemas"
+    import click
+    import json
+
+    from llm.migrations import migrate
+    from llm.utils import (
+        schema_summary,
+    )
+    import pathlib
+    import sqlite_utils
+    import textwrap
+
     path = pathlib.Path(path or logs_db_path())
     if not path.exists():
         raise click.ClickException("No log database found at {}".format(path))
@@ -1597,26 +1602,14 @@ def schemas_list(path, queries, full):
       on responses.schema_id = schemas.id
     {} group by responses.schema_id
     order by recently_used
-    """.format(
-        where_sql
-    )
+    """.format(where_sql)
     rows = db.query(sql, params)
     for row in rows:
         click.echo("- id: {}".format(row["id"]))
         if full:
-            click.echo(
-                "  schema: |\n{}".format(
-                    textwrap.indent(
-                        json.dumps(json.loads(row["content"]), indent=2), "    "
-                    )
-                )
-            )
+            click.echo("  schema: |\n{}".format(textwrap.indent(json.dumps(json.loads(row["content"]), indent=2), "    ")))
         else:
-            click.echo(
-                "  summary: |\n    {}".format(
-                    schema_summary(json.loads(row["content"]))
-                )
-            )
+            click.echo("  summary: |\n    {}".format(schema_summary(json.loads(row["content"]))))
         click.echo(
             "  usage: |\n    {} time{}, most recently {}".format(
                 row["times_used"],
@@ -1636,6 +1629,14 @@ def schemas_list(path, queries, full):
 )
 def schemas_show(schema_id, path):
     "Show a stored schema"
+    import click
+    import json
+
+    from llm.migrations import migrate
+
+    import pathlib
+    import sqlite_utils
+
     path = pathlib.Path(path or logs_db_path())
     if not path.exists():
         raise click.ClickException("No log database found at {}".format(path))
@@ -1659,6 +1660,13 @@ def schemas_dsl_debug(input, multi):
     \b
         llm schema dsl 'name, age int, bio: their bio'
     """
+    import click
+    import json
+
+    from llm.utils import (
+        schema_dsl,
+    )
+
     schema = schema_dsl(input, multi)
     click.echo(json.dumps(schema, indent=2))
 
@@ -1676,6 +1684,13 @@ def aliases():
 @click.option("json_", "--json", is_flag=True, help="Output as JSON")
 def aliases_list(json_):
     "List current aliases"
+    import click
+    import json
+    from llm import (
+        get_embedding_model_aliases,
+        get_model_aliases,
+    )
+
     to_output = []
     for alias, model in get_model_aliases().items():
         if alias != model.model_id:
@@ -1684,18 +1699,12 @@ def aliases_list(json_):
         if alias != embedding_model.model_id:
             to_output.append((alias, embedding_model.model_id, "embedding"))
     if json_:
-        click.echo(
-            json.dumps({key: value for key, value, type_ in to_output}, indent=4)
-        )
+        click.echo(json.dumps({key: value for key, value, type_ in to_output}, indent=4))
         return
     max_alias_length = max(len(a) for a, _, _ in to_output)
     fmt = "{alias:<" + str(max_alias_length) + "} : {model_id}{type_}"
     for alias, model_id, type_ in to_output:
-        click.echo(
-            fmt.format(
-                alias=alias, model_id=model_id, type_=f" ({type_})" if type_ else ""
-            )
-        )
+        click.echo(fmt.format(alias=alias, model_id=model_id, type_=f" ({type_})" if type_ else ""))
 
 
 @aliases.command(name="set")
@@ -1722,11 +1731,15 @@ def aliases_set(alias, model_id, query):
     \b
         llm aliases set mini -q 4o -q mini
     """
+    import click
+    from llm import (
+        get_models_with_aliases,
+        set_alias,
+    )
+
     if not model_id:
         if not query:
-            raise click.ClickException(
-                "You must provide a model_id or at least one -q option"
-            )
+            raise click.ClickException("You must provide a model_id or at least one -q option")
         # Search for the first model matching all query strings
         found = None
         for model_with_aliases in get_models_with_aliases():
@@ -1734,9 +1747,7 @@ def aliases_set(alias, model_id, query):
                 found = model_with_aliases
                 break
         if not found:
-            raise click.ClickException(
-                "No model found matching query: " + ", ".join(query)
-            )
+            raise click.ClickException("No model found matching query: " + ", ".join(query))
         model_id = found.model.model_id
         set_alias(alias, model_id)
         click.echo(
@@ -1758,6 +1769,11 @@ def aliases_remove(alias):
     \b
         $ llm aliases remove turbo
     """
+    import click
+    from llm import (
+        remove_alias,
+    )
+
     try:
         remove_alias(alias)
     except KeyError as ex:
@@ -1767,6 +1783,8 @@ def aliases_remove(alias):
 @aliases.command(name="path")
 def aliases_path():
     "Output the path to the aliases.json file"
+    from llm import user_dir
+
     click.echo(user_dir() / "aliases.json")
 
 
@@ -1774,10 +1792,15 @@ def aliases_path():
 @click.option("--all", help="Include built-in default plugins", is_flag=True)
 def plugins_list(all):
     "List installed plugins"
+    import json
+    from llm import get_plugins
+
     click.echo(json.dumps(get_plugins(all), indent=2))
 
 
 def display_truncated(text):
+    import shutil
+
     console_width = shutil.get_terminal_size()[0]
     if len(text) > console_width:
         return text[: console_width - 3] + "..."
@@ -1787,9 +1810,7 @@ def display_truncated(text):
 
 @cli.command()
 @click.argument("packages", nargs=-1, required=False)
-@click.option(
-    "-U", "--upgrade", is_flag=True, help="Upgrade packages to latest version"
-)
+@click.option("-U", "--upgrade", is_flag=True, help="Upgrade packages to latest version")
 @click.option(
     "-e",
     "--editable",
@@ -1807,6 +1828,10 @@ def display_truncated(text):
 )
 def install(packages, upgrade, editable, force_reinstall, no_cache_dir):
     """Install packages from PyPI into the same environment as LLM"""
+
+    from runpy import run_module
+    import sys
+
     args = ["pip", "install"]
     if upgrade:
         args += ["--upgrade"]
@@ -1826,6 +1851,10 @@ def install(packages, upgrade, editable, force_reinstall, no_cache_dir):
 @click.option("-y", "--yes", is_flag=True, help="Don't ask for confirmation")
 def uninstall(packages, yes):
     """Uninstall Python packages from the LLM environment"""
+
+    from runpy import run_module
+    import sys
+
     sys.argv = ["pip", "uninstall"] + list(packages) + (["-y"] if yes else [])
     run_module("pip", run_name="__main__")
 
@@ -1865,10 +1894,23 @@ def uninstall(packages, yes):
     type=click.Choice(["json", "blob", "base64", "hex"]),
     help="Output format",
 )
-def embed(
-    collection, id, input, model, store, database, content, binary, metadata, format_
-):
+def embed(collection, id, input, model, store, database, content, binary, metadata, format_):
     """Embed text and store or return the result"""
+    import click
+    import json
+    from llm import (
+        Collection,
+        UnknownModelError,
+        encode,
+        get_default_embedding_model,
+        get_embedding_model,
+        user_dir,
+    )
+
+    import base64
+    import sqlite_utils
+    import sys
+
     if collection and not id:
         raise click.ClickException("Must provide both collection and id")
 
@@ -1895,9 +1937,7 @@ def embed(
             if not model:
                 model = get_default_embedding_model()
                 if model is None:
-                    raise click.ClickException(
-                        "You need to specify an embedding model (no default model is set)"
-                    )
+                    raise click.ClickException("You need to specify an embedding model (no default model is set)")
             collection_obj = Collection(collection, db=db, model_id=model)
             model_obj = collection_obj.model()
 
@@ -1907,9 +1947,7 @@ def embed(
         try:
             model_obj = get_embedding_model(model)
         except UnknownModelError:
-            raise click.ClickException(
-                "You need to specify an embedding model (no default model is set)"
-            )
+            raise click.ClickException("You need to specify an embedding model (no default model is set)")
 
     show_output = True
     if collection and (format_ is None):
@@ -1977,9 +2015,7 @@ def embed(
     multiple=True,
     help="Additional databases to attach - specify alias and file path",
 )
-@click.option(
-    "--batch-size", type=int, help="Batch size to use when running embeddings"
-)
+@click.option("--batch-size", type=int, help="Batch size to use when running embeddings")
 @click.option("--prefix", help="Prefix to add to the IDs", default="")
 @click.option("-m", "--model", help="Embedding model to use")
 @click.option(
@@ -2047,6 +2083,20 @@ def embed_multi(
          llm embed-multi images --files photos '*.jpg' --binary
          llm embed-multi texts --files texts '*.txt' --encoding utf-8 --encoding latin-1
     """
+    import click
+    import io
+    import json
+    from llm import (
+        Collection,
+        get_default_embedding_model,
+        user_dir,
+    )
+
+    import pathlib
+    import sqlite_utils
+    from sqlite_utils.utils import rows_from_file, Format
+    import sys
+
     if binary and not files:
         raise click.UsageError("--binary must be used with --files")
     if binary and encodings:
@@ -2056,9 +2106,7 @@ def embed_multi(
 
     if files:
         if input_path or sql or format:
-            raise click.UsageError(
-                "Cannot use --files with --sql, input path or --format"
-            )
+            raise click.UsageError("Cannot use --files with --sql, input path or --format")
 
     if database:
         db = sqlite_utils.Database(database)
@@ -2069,13 +2117,9 @@ def embed_multi(
         db.attach(alias, attach_path)
 
     try:
-        collection_obj = Collection(
-            collection, db=db, model_id=model or get_default_embedding_model()
-        )
+        collection_obj = Collection(collection, db=db, model_id=model or get_default_embedding_model())
     except ValueError:
-        raise click.ClickException(
-            "You need to specify an embedding model (no default model is set)"
-        )
+        raise click.ClickException("You need to specify an embedding model (no default model is set)")
 
     expected_length = None
     if files:
@@ -2135,17 +2179,11 @@ def embed_multi(
                     for _ in load_rows(fp):
                         expected_length += 1
 
-            rows = load_rows(
-                open(input_path, "rb")
-                if input_path != "-"
-                else io.BufferedReader(sys.stdin.buffer)
-            )
+            rows = load_rows(open(input_path, "rb") if input_path != "-" else io.BufferedReader(sys.stdin.buffer))
         except json.JSONDecodeError as ex:
             raise click.ClickException(str(ex))
 
-    with click.progressbar(
-        rows, label="Embedding", show_percent=True, length=expected_length
-    ) as rows:
+    with click.progressbar(rows, label="Embedding", show_percent=True, length=expected_length) as rows:
 
         def tuples() -> Iterable[Tuple[str, Union[bytes, str]]]:
             for row in rows:
@@ -2177,9 +2215,7 @@ def embed_multi(
 )
 @click.option("-c", "--content", help="Content to embed for comparison")
 @click.option("--binary", is_flag=True, help="Treat input as binary data")
-@click.option(
-    "-n", "--number", type=int, default=10, help="Number of results to return"
-)
+@click.option("-n", "--number", type=int, default=10, help="Number of results to return")
 @click.option(
     "-d",
     "--database",
@@ -2200,6 +2236,16 @@ def similar(collection, id, input, content, binary, number, database):
     \b
         llm similar my-collection 1234
     """
+    from dataclasses import asdict
+    import json
+    from llm import (
+        Collection,
+        user_dir,
+    )
+
+    import sqlite_utils
+    import sys
+
     if not id and not content and not input:
         raise click.ClickException("Must provide content or an ID for the comparison")
 
@@ -2258,6 +2304,11 @@ def embed_models():
 )
 def embed_models_list(query):
     "List available embedding models"
+    import click
+    from llm import (
+        get_embedding_models_with_aliases,
+    )
+
     output = []
     for model_with_aliases in get_embedding_models_with_aliases():
         if query:
@@ -2272,11 +2323,16 @@ def embed_models_list(query):
 
 @embed_models.command(name="default")
 @click.argument("model", required=False)
-@click.option(
-    "--remove-default", is_flag=True, help="Reset to specifying no default model"
-)
+@click.option("--remove-default", is_flag=True, help="Reset to specifying no default model")
 def embed_models_default(model, remove_default):
     "Show or set the default embedding model"
+    import click
+    from llm import (
+        get_default_embedding_model,
+        get_embedding_model,
+        set_default_embedding_model,
+    )
+
     if not model and not remove_default:
         default = get_default_embedding_model()
         if default is None:
@@ -2307,6 +2363,11 @@ def collections():
 @collections.command(name="path")
 def collections_path():
     "Output the path to the embeddings database"
+    import click
+    from llm import (
+        user_dir,
+    )
+
     click.echo(user_dir() / "embeddings.db")
 
 
@@ -2321,6 +2382,14 @@ def collections_path():
 @click.option("json_", "--json", is_flag=True, help="Output as JSON")
 def embed_db_collections(database, json_):
     "View a list of collections"
+    import click
+    import json
+    from llm import (
+        user_dir,
+    )
+
+    import sqlite_utils
+
     database = database or (user_dir() / "embeddings.db")
     db = sqlite_utils.Database(str(database))
     if not db["collections"].exists():
@@ -2343,11 +2412,7 @@ def embed_db_collections(database, json_):
     else:
         for row in rows:
             click.echo("{}: {}".format(row["name"], row["model"]))
-            click.echo(
-                "  {} embedding{}".format(
-                    row["num_embeddings"], "s" if row["num_embeddings"] != 1 else ""
-                )
-            )
+            click.echo("  {} embedding{}".format(row["num_embeddings"], "s" if row["num_embeddings"] != 1 else ""))
 
 
 @collections.command(name="delete")
@@ -2368,6 +2433,14 @@ def collections_delete(collection, database):
     \b
         llm collections delete my-collection
     """
+    import click
+    from llm import (
+        Collection,
+        user_dir,
+    )
+
+    import sqlite_utils
+
     database = database or (user_dir() / "embeddings.db")
     db = sqlite_utils.Database(str(database))
     try:
@@ -2396,6 +2469,8 @@ def options_list():
     \b
         llm models options list
     """
+    import click
+
     options = get_all_model_options()
     if not options:
         click.echo("No default options set for any models.", err=True)
@@ -2418,6 +2493,8 @@ def options_show(model):
     \b
         llm models options show gpt-4o
     """
+    import click
+
     import llm
 
     try:
@@ -2451,6 +2528,9 @@ def options_set(model, key, value):
         llm models options set gpt-4o temperature 0.5
     """
     import llm
+    import click
+
+    import pydantic
 
     try:
         # Resolve alias to model ID
@@ -2488,6 +2568,7 @@ def options_clear(model, key):
         llm models options clear gpt-4o temperature
     """
     import llm
+    import click
 
     try:
         # Resolve alias to model ID
@@ -2509,22 +2590,33 @@ def options_clear(model, key):
         if len(cleared_keys) == 1:
             click.echo(f"Cleared option '{cleared_keys[0]}' for model {model_id}")
         else:
-            click.echo(
-                f"Cleared {', '.join(cleared_keys)} options for model {model_id}"
-            )
+            click.echo(f"Cleared {', '.join(cleared_keys)} options for model {model_id}")
 
 
 def template_dir():
+    from llm import user_dir
+
     path = user_dir() / "templates"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def logs_db_path():
+    from llm import user_dir
+
     return user_dir() / "logs.db"
 
 
 def load_template(name):
+    import click
+    from llm import (
+        Template,
+        get_template_loaders,
+    )
+
+    import pydantic
+    import yaml
+
     if ":" in name:
         prefix, rest = name.split(":", 1)
         loaders = get_template_loaders()
@@ -2534,9 +2626,7 @@ def load_template(name):
         try:
             return loader(rest)
         except Exception as ex:
-            raise click.ClickException(
-                "Could not load template {}: {}".format(name, ex)
-            )
+            raise click.ClickException("Could not load template {}: {}".format(name, ex))
 
     path = template_dir() / f"{name}.yaml"
     if not path.exists():
@@ -2557,6 +2647,10 @@ def load_template(name):
 
 
 def get_history(chat_id):
+    from llm.migrations import migrate
+
+    import sqlite_utils
+
     if chat_id is None:
         return None, []
     log_path = logs_db_path()
@@ -2569,9 +2663,7 @@ def get_history(chat_id):
             chat_id = last_row[0].get("chat_id") or last_row[0].get("id")
         else:  # Database is empty
             return None, []
-    rows = db["logs"].rows_where(
-        "id = ? or chat_id = ?", [chat_id, chat_id], order_by="id"
-    )
+    rows = db["logs"].rows_where("id = ? or chat_id = ?", [chat_id, chat_id], order_by="id")
     return chat_id, rows
 
 
@@ -2581,11 +2673,6 @@ def render_errors(errors):
         output.append(", ".join(error["loc"]))
         output.append("  " + error["msg"])
     return "\n".join(output)
-
-
-load_plugins()
-
-pm.hook.register_commands(cli=cli)
 
 
 def _human_readable_size(size_bytes):
@@ -2603,6 +2690,10 @@ def _human_readable_size(size_bytes):
 
 
 def logs_on():
+    from llm import (
+        user_dir,
+    )
+
     return not (user_dir() / "logs-off").exists()
 
 
@@ -2610,6 +2701,11 @@ def get_all_model_options() -> dict:
     """
     Get all default options for all models
     """
+    import json
+    from llm import (
+        user_dir,
+    )
+
     path = user_dir() / "model_options.json"
     if not path.exists():
         return {}
@@ -2632,6 +2728,11 @@ def get_model_options(model_id: str) -> dict:
     Returns:
         A dictionary of model options
     """
+    import json
+    from llm import (
+        user_dir,
+    )
+
     path = user_dir() / "model_options.json"
     if not path.exists():
         return {}
@@ -2653,6 +2754,11 @@ def set_model_option(model_id: str, key: str, value: Any) -> None:
         key: The option key
         value: The option value
     """
+    import json
+    from llm import (
+        user_dir,
+    )
+
     path = user_dir() / "model_options.json"
     if path.exists():
         try:
@@ -2681,6 +2787,11 @@ def clear_model_option(model_id: str, key: str) -> None:
         model_id: The model ID
         key: Key to clear
     """
+    import json
+    from llm import (
+        user_dir,
+    )
+
     path = user_dir() / "model_options.json"
     if not path.exists():
         return

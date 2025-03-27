@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 import os
 
 VERSION = "0.24a0"
@@ -30,10 +30,10 @@ setup(
     },
     license="Apache License, Version 2.0",
     version=VERSION,
-    packages=find_packages(),
+    packages=["llm", "llm_cli"],
     entry_points="""
         [console_scripts]
-        llm=llm.cli:cli
+        llm=llm_cli.__main__:main
     """,
     install_requires=[
         "click",

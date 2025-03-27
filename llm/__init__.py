@@ -30,6 +30,7 @@ import os
 import pathlib
 import struct
 
+
 __all__ = [
     "AsyncConversation",
     "AsyncKeyModel",
@@ -68,14 +69,18 @@ def get_plugins(all=False):
         distinfo = plugin_to_distinfo.get(plugin)
         if distinfo:
             plugin_info["version"] = distinfo.version
-            plugin_info["name"] = (
-                getattr(distinfo, "name", None) or distinfo.project_name
-            )
+            plugin_info["name"] = getattr(distinfo, "name", None) or distinfo.project_name
         plugins.append(plugin_info)
     return plugins
 
 
 def get_models_with_aliases() -> List["ModelWithAliases"]:
+    from .models import (
+        ModelWithAliases,
+    )
+    from typing import Dict
+    import json
+
     model_aliases = []
 
     # Include aliases from aliases.json
@@ -98,7 +103,7 @@ def get_models_with_aliases() -> List["ModelWithAliases"]:
     return model_aliases
 
 
-def get_template_loaders() -> Dict[str, Callable[[str], Template]]:
+def get_template_loaders() -> Dict[str, Callable[[str], "Template"]]:
     load_plugins()
     loaders = {}
 
@@ -115,6 +120,12 @@ def get_template_loaders() -> Dict[str, Callable[[str], Template]]:
 
 
 def get_embedding_models_with_aliases() -> List["EmbeddingModelWithAliases"]:
+    from .models import (
+        EmbeddingModelWithAliases,
+    )
+    from typing import Dict
+    import json
+
     model_aliases = []
 
     # Include aliases from aliases.json
@@ -156,7 +167,7 @@ def get_embedding_model(name):
         raise UnknownModelError("Unknown model: " + str(name))
 
 
-def get_embedding_model_aliases() -> Dict[str, EmbeddingModel]:
+def get_embedding_model_aliases() -> Dict[str, "EmbeddingModel"]:
     model_aliases = {}
     for model_with_aliases in get_embedding_models_with_aliases():
         for alias in model_with_aliases.aliases:
@@ -165,19 +176,17 @@ def get_embedding_model_aliases() -> Dict[str, EmbeddingModel]:
     return model_aliases
 
 
-def get_async_model_aliases() -> Dict[str, AsyncModel]:
+def get_async_model_aliases() -> Dict[str, "AsyncModel"]:
     async_model_aliases = {}
     for model_with_aliases in get_models_with_aliases():
         if model_with_aliases.async_model:
             for alias in model_with_aliases.aliases:
                 async_model_aliases[alias] = model_with_aliases.async_model
-            async_model_aliases[model_with_aliases.model.model_id] = (
-                model_with_aliases.async_model
-            )
+            async_model_aliases[model_with_aliases.model.model_id] = model_with_aliases.async_model
     return async_model_aliases
 
 
-def get_model_aliases() -> Dict[str, Model]:
+def get_model_aliases() -> Dict[str, "Model"]:
     model_aliases = {}
     for model_with_aliases in get_models_with_aliases():
         if model_with_aliases.model:
@@ -191,20 +200,23 @@ class UnknownModelError(KeyError):
     pass
 
 
-def get_models() -> List[Model]:
+def get_models() -> List["Model"]:
     "Get all registered models"
+
     models_with_aliases = get_models_with_aliases()
     return [mwa.model for mwa in models_with_aliases if mwa.model]
 
 
-def get_async_models() -> List[AsyncModel]:
+def get_async_models() -> List["AsyncModel"]:
     "Get all registered async models"
+
     models_with_aliases = get_models_with_aliases()
     return [mwa.async_model for mwa in models_with_aliases if mwa.async_model]
 
 
-def get_async_model(name: Optional[str] = None) -> AsyncModel:
+def get_async_model(name: Optional[str] = None) -> "AsyncModel":
     "Get an async model by name or alias"
+
     aliases = get_async_model_aliases()
     name = name or get_default_model()
     try:
@@ -222,8 +234,9 @@ def get_async_model(name: Optional[str] = None) -> AsyncModel:
             raise UnknownModelError("Unknown model: " + name)
 
 
-def get_model(name: Optional[str] = None, _skip_async: bool = False) -> Model:
+def get_model(name: Optional[str] = None, _skip_async: bool = False) -> "Model":
     "Get a model by name or alias"
+
     aliases = get_model_aliases()
     name = name or get_default_model()
     try:
@@ -243,9 +256,7 @@ def get_model(name: Optional[str] = None, _skip_async: bool = False) -> Model:
             raise UnknownModelError("Unknown model: " + name)
 
 
-def get_key(
-    explicit_key: Optional[str], key_alias: str, env_var: Optional[str] = None
-) -> Optional[str]:
+def get_key(explicit_key: Optional[str], key_alias: str, env_var: Optional[str] = None) -> Optional[str]:
     """
     Return an API key based on a hierarchy of potential sources.
 
@@ -253,6 +264,7 @@ def get_key(
     :param key_alias: The alias used to retrieve the key from the keys.json file.
     :param env_var: Name of the environment variable to check for the key.
     """
+
     stored_keys = load_keys()
     # If user specified an alias, use the key stored for that alias
     if explicit_key in stored_keys:
@@ -279,6 +291,8 @@ def load_keys():
 
 
 def user_dir():
+    import os
+
     llm_user_path = os.environ.get("LLM_USER_PATH")
     if llm_user_path:
         path = pathlib.Path(llm_user_path)
@@ -292,6 +306,7 @@ def set_alias(alias, model_id_or_alias):
     """
     Set an alias to point to the specified model.
     """
+
     path = user_dir() / "aliases.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -321,6 +336,7 @@ def remove_alias(alias):
     """
     Remove an alias.
     """
+
     path = user_dir() / "aliases.json"
     if not path.exists():
         raise KeyError("No aliases.json file exists")
