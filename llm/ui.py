@@ -320,7 +320,8 @@ def execute_prompt_ui(
         click.ClickException: For user-facing errors
     """
     # Get the PromptExecutor class (may be overridden by plugins)
-    executor_class = get_prompt_executor()
+    # If stdout is piped, bypass plugins and use the default executor
+    executor_class = get_prompt_executor(bypass_plugins=not sys.stdout.isatty())
 
     executor = executor_class(
         prompt=prompt,
@@ -648,7 +649,7 @@ def execute_chat_ui(
     interface.run()
 
 
-def get_prompt_executor() -> type:
+def get_prompt_executor(bypass_plugins: bool = False) -> type:
     """
     Get the PromptExecutor class to use for prompt execution UI.
 
@@ -656,9 +657,17 @@ def get_prompt_executor() -> type:
     register_prompt_executor hook. If no plugin is registered,
     returns the default PromptExecutor class.
 
+    Args:
+        bypass_plugins: If True, ignore plugin executors and return the default.
+                       This is used when stdout is piped to ensure plain text output.
+
     Returns:
         The PromptExecutor class to instantiate
     """
+    # If bypassing plugins (e.g., when stdout is piped), return default immediately
+    if bypass_plugins:
+        return PromptExecutor
+
     from .plugins import pm
 
     # Collect all registered prompt executors from plugins
