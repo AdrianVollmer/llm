@@ -40,6 +40,7 @@ from llm import (
     set_default_embedding_model,
     remove_alias,
 )
+from llm.errors import FragmentNotFound, AttachmentError
 from llm.models import _BaseConversation, ChainResponse
 
 from .migrations import migrate
@@ -83,9 +84,6 @@ warnings.simplefilter("ignore", ResourceWarning)
 
 DEFAULT_TEMPLATE = "prompt: "
 
-
-class FragmentNotFound(Exception):
-    pass
 
 
 def validate_fragment_alias(ctx, param, value):
@@ -196,12 +194,6 @@ def process_fragments_in_chat(
         else:
             prompt_lines.append(line)
     return "\n".join(prompt_lines), fragments, attachments
-
-
-class AttachmentError(Exception):
-    """Exception raised for errors in attachment resolution."""
-
-    pass
 
 
 def resolve_attachment(value):
