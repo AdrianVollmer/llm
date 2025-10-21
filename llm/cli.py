@@ -1,10 +1,8 @@
-import asyncio
 import click
 from click_default_group import DefaultGroup
 from dataclasses import asdict
 import io
 import json
-import os
 from llm import (
     Attachment,
     AsyncConversation,
@@ -41,10 +39,11 @@ from llm import (
     remove_alias,
 )
 from llm.errors import FragmentNotFound, AttachmentError
-from llm.models import _BaseConversation, ChainResponse
+from llm.models import _BaseConversation
 
 from .migrations import migrate
 from .plugins import pm, load_plugins
+from .ui import execute_prompt_ui, execute_chat_ui
 from .utils import (
     ensure_fragment,
     extract_fenced_code_block,
@@ -783,136 +782,37 @@ def prompt(
         kwargs["key"] = key
 
     prompt = read_prompt()
-    response = None
-
-    try:
-        fragments_and_attachments = resolve_fragments(
-            db, fragments, allow_attachments=True
-        )
-        resolved_fragments = [
-            fragment
-            for fragment in fragments_and_attachments
-            if isinstance(fragment, Fragment)
-        ]
-        resolved_attachments.extend(
-            attachment
-            for attachment in fragments_and_attachments
-            if isinstance(attachment, Attachment)
-        )
-        resolved_system_fragments = resolve_fragments(db, system_fragments)
-    except FragmentNotFound as ex:
-        raise click.ClickException(str(ex))
-
-    prompt_method = model.prompt
-    if conversation:
-        prompt_method = conversation.prompt
 
     tool_implementations = _gather_tools(tools, python_tools)
 
-    if tool_implementations:
-        prompt_method = conversation.chain
-        kwargs["options"] = validated_options
-        kwargs["chain_limit"] = chain_limit
-        if tools_debug:
-            kwargs["after_call"] = _debug_tool_call
-        if tools_approve:
-            kwargs["before_call"] = _approve_tool_call
-        kwargs["tools"] = tool_implementations
-    else:
-        # Merge in options for the .prompt() methods
-        kwargs.update(validated_options)
-
-    try:
-        if async_:
-
-            async def inner():
-                if should_stream:
-                    response = prompt_method(
-                        prompt,
-                        attachments=resolved_attachments,
-                        system=system,
-                        schema=schema,
-                        fragments=resolved_fragments,
-                        system_fragments=resolved_system_fragments,
-                        **kwargs,
-                    )
-                    async for chunk in response:
-                        print(chunk, end="")
-                        sys.stdout.flush()
-                    print("")
-                else:
-                    response = prompt_method(
-                        prompt,
-                        fragments=resolved_fragments,
-                        attachments=resolved_attachments,
-                        schema=schema,
-                        system=system,
-                        system_fragments=resolved_system_fragments,
-                        **kwargs,
-                    )
-                    text = await response.text()
-                    if extract or extract_last:
-                        text = (
-                            extract_fenced_code_block(text, last=extract_last) or text
-                        )
-                    print(text)
-                return response
-
-            response = asyncio.run(inner())
-        else:
-            response = prompt_method(
-                prompt,
-                fragments=resolved_fragments,
-                attachments=resolved_attachments,
-                system=system,
-                schema=schema,
-                system_fragments=resolved_system_fragments,
-                **kwargs,
-            )
-            if should_stream:
-                for chunk in response:
-                    print(chunk, end="")
-                    sys.stdout.flush()
-                print("")
-            else:
-                text = response.text()
-                if extract or extract_last:
-                    text = extract_fenced_code_block(text, last=extract_last) or text
-                print(text)
-    # List of exceptions that should never be raised in pytest:
-    except (ValueError, NotImplementedError) as ex:
-        raise click.ClickException(str(ex))
-    except Exception as ex:
-        # All other exceptions should raise in pytest, show to user otherwise
-        if getattr(sys, "_called_from_test", False) or os.environ.get(
-            "LLM_RAISE_ERRORS", None
-        ):
-            raise
-        raise click.ClickException(str(ex))
-
-    if usage:
-        if isinstance(response, ChainResponse):
-            responses = response._responses
-        else:
-            responses = [response]
-        for response_object in responses:
-            # Show token usage to stderr in yellow
-            click.echo(
-                click.style(
-                    "Token usage: {}".format(response_object.token_usage()),
-                    fg="yellow",
-                    bold=True,
-                ),
-                err=True,
-            )
-
-    # Log responses to the database
-    if (logs_on() or log) and not no_log:
-        # Could be Response, AsyncResponse, ChainResponse, AsyncChainResponse
-        if isinstance(response, AsyncResponse):
-            response = asyncio.run(response.to_sync_response())
-        # At this point ALL forms should have a log_to_db() method that works:
-        response.log_to_db(db)
+    _ = execute_prompt_ui(
+        prompt=prompt,
+        db=db,
+        model=model,
+        conversation=conversation,
+        system=system,
+        schema=schema,
+        fragments=fragments,
+        system_fragments=system_fragments,
+        resolved_attachments=resolved_attachments,
+        should_stream=should_stream,
+        async_=async_,
+        extract=extract,
+        extract_last=extract_last,
+        tool_implementations=tool_implementations,
+        tools_debug=tools_debug,
+        tools_approve=tools_approve,
+        chain_limit=chain_limit,
+        validated_options=validated_options,
+        usage=usage,
+        no_log=no_log,
+        log=log,
+        resolve_fragments_fn=resolve_fragments,
+        extract_fenced_code_block_fn=extract_fenced_code_block,
+        logs_on_fn=logs_on,
+        _debug_tool_call_fn=_debug_tool_call,
+        _approve_tool_call_fn=_approve_tool_call,
+    )
 
 
 @cli.command()
@@ -1052,6 +952,7 @@ def chat(
         tools = conversation_tools
 
     template_obj = None
+    params = {}
     if template:
         params = dict(param)
         try:
@@ -1137,97 +1038,19 @@ def chat(
     except FragmentNotFound as ex:
         raise click.ClickException(str(ex))
 
-    click.echo("Chatting with {}".format(model.model_id))
-    click.echo("Type 'exit' or 'quit' to exit")
-    click.echo("Type '!multi' to enter multiple lines, then '!end' to finish")
-    click.echo("Type '!edit' to open your default editor and modify the prompt")
-    click.echo(
-        "Type '!fragment <my_fragment> [<another_fragment> ...]' to insert one or more fragments"
+    execute_chat_ui(
+        db=db,
+        model=model,
+        conversation=conversation,
+        system=system,
+        argument_fragments=argument_fragments,
+        argument_attachments=argument_attachments,
+        argument_system_fragments=argument_system_fragments,
+        template_obj=template_obj,
+        params=params,
+        kwargs=kwargs,
+        process_fragments_in_chat_fn=process_fragments_in_chat,
     )
-    in_multi = False
-
-    accumulated = []
-    accumulated_fragments = []
-    accumulated_attachments = []
-    end_token = "!end"
-    while True:
-        prompt = click.prompt("", prompt_suffix="> " if not in_multi else "")
-        fragments = []
-        attachments = []
-        if argument_fragments:
-            fragments += argument_fragments
-            # fragments from --fragments will get added to the first message only
-            argument_fragments = []
-        if argument_attachments:
-            attachments = argument_attachments
-            argument_attachments = []
-        if prompt.strip().startswith("!multi"):
-            in_multi = True
-            bits = prompt.strip().split()
-            if len(bits) > 1:
-                end_token = "!end {}".format(" ".join(bits[1:]))
-            continue
-        if prompt.strip() == "!edit":
-            edited_prompt = click.edit()
-            if edited_prompt is None:
-                click.echo("Editor closed without saving.", err=True)
-                continue
-            prompt = edited_prompt.strip()
-        if prompt.strip().startswith("!fragment "):
-            prompt, fragments, attachments = process_fragments_in_chat(db, prompt)
-
-        if in_multi:
-            if prompt.strip() == end_token:
-                prompt = "\n".join(accumulated)
-                fragments = accumulated_fragments
-                attachments = accumulated_attachments
-                in_multi = False
-                accumulated = []
-                accumulated_fragments = []
-                accumulated_attachments = []
-            else:
-                if prompt:
-                    accumulated.append(prompt)
-                accumulated_fragments += fragments
-                accumulated_attachments += attachments
-                continue
-        if template_obj:
-            try:
-                # Mirror prompt() logic: only pass input if template uses it
-                uses_input = "input" in template_obj.vars()
-                input_ = prompt if uses_input else ""
-                template_prompt, template_system = template_obj.evaluate(input_, params)
-            except Template.MissingVariables as ex:
-                raise click.ClickException(str(ex))
-            if template_system and not system:
-                system = template_system
-            if template_prompt:
-                if prompt and not uses_input:
-                    prompt = f"{template_prompt}\n{prompt}"
-                else:
-                    prompt = template_prompt
-        if prompt.strip() in ("exit", "quit"):
-            break
-
-        response = conversation.chain(
-            prompt,
-            fragments=[str(fragment) for fragment in fragments],
-            system_fragments=[
-                str(system_fragment) for system_fragment in argument_system_fragments
-            ],
-            attachments=attachments,
-            system=system,
-            **kwargs,
-        )
-
-        # System prompt and system fragments only sent for the first message
-        system = None
-        argument_system_fragments = []
-        for chunk in response:
-            print(chunk, end="")
-            sys.stdout.flush()
-        response.log_to_db(db)
-        print("")
 
 
 def load_conversation(
