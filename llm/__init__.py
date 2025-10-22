@@ -29,6 +29,7 @@ from .utils import schema_dsl, Fragment
 from .embeddings import Collection
 from .templates import Template
 from .plugins import pm, load_plugins
+from .ui import PromptExecutor, ChatInterface
 import click
 from typing import Any, Dict, List, Optional, Callable, Type, Union
 import inspect
@@ -43,6 +44,7 @@ __all__ = [
     "AsyncResponse",
     "Attachment",
     "CancelToolCall",
+    "ChatInterface",
     "Collection",
     "Conversation",
     "Fragment",
@@ -56,6 +58,7 @@ __all__ = [
     "NeedsKeyException",
     "Options",
     "Prompt",
+    "PromptExecutor",
     "Response",
     "Template",
     "Tool",

@@ -319,7 +319,10 @@ def execute_prompt_ui(
     Raises:
         click.ClickException: For user-facing errors
     """
-    executor = PromptExecutor(
+    # Get the PromptExecutor class (may be overridden by plugins)
+    executor_class = get_prompt_executor()
+
+    executor = executor_class(
         prompt=prompt,
         db=db,
         model=model,
@@ -626,7 +629,10 @@ def execute_chat_ui(
         kwargs: Additional keyword arguments for conversation.chain()
         process_fragments_in_chat_fn: Function to process fragment commands
     """
-    interface = ChatInterface(
+    # Get the ChatInterface class (may be overridden by plugins)
+    interface_class = get_chat_interface()
+
+    interface = interface_class(
         db=db,
         model=model,
         conversation=conversation,
@@ -640,3 +646,63 @@ def execute_chat_ui(
         process_fragments_in_chat_fn=process_fragments_in_chat_fn,
     )
     interface.run()
+
+
+def get_prompt_executor() -> type:
+    """
+    Get the PromptExecutor class to use for prompt execution UI.
+
+    Plugins can register custom PromptExecutor classes via the
+    register_prompt_executor hook. If no plugin is registered,
+    returns the default PromptExecutor class.
+
+    Returns:
+        The PromptExecutor class to instantiate
+    """
+    from .plugins import pm
+
+    # Collect all registered prompt executors from plugins
+    custom_executors = []
+
+    def _register(executor_class):
+        custom_executors.append(executor_class)
+
+    pm.hook.register_prompt_executor(register=_register)
+
+    # If a plugin registered an executor, use the last one
+    # (allows plugins to override each other with predictable behavior)
+    if custom_executors:
+        return custom_executors[-1]
+
+    # Otherwise return the default
+    return PromptExecutor
+
+
+def get_chat_interface() -> type:
+    """
+    Get the ChatInterface class to use for chat UI.
+
+    Plugins can register custom ChatInterface classes via the
+    register_chat_interface hook. If no plugin is registered,
+    returns the default ChatInterface class.
+
+    Returns:
+        The ChatInterface class to instantiate
+    """
+    from .plugins import pm
+
+    # Collect all registered chat interfaces from plugins
+    custom_interfaces = []
+
+    def _register(interface_class):
+        custom_interfaces.append(interface_class)
+
+    pm.hook.register_chat_interface(register=_register)
+
+    # If a plugin registered an interface, use the last one
+    # (allows plugins to override each other with predictable behavior)
+    if custom_interfaces:
+        return custom_interfaces[-1]
+
+    # Otherwise return the default
+    return ChatInterface

@@ -33,3 +33,13 @@ def register_fragment_loaders(register):
 @hookspec
 def register_tools(register):
     "Register functions that can be used as tools by the LLMs"
+
+
+@hookspec
+def register_prompt_executor(register):
+    "Register a custom PromptExecutor class for handling prompt execution UI"
+
+
+@hookspec
+def register_chat_interface(register):
+    "Register a custom ChatInterface class for handling chat UI"
