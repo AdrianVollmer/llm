@@ -15,7 +15,7 @@ import asyncio
 import click
 import os
 import sys
-from typing import Optional, Callable
+from typing import Optional, Callable, Union
 
 from llm import (
     Attachment,
@@ -365,6 +365,7 @@ class ChatInterface:
     - print_welcome(): Display welcome messages and instructions
     - run(): Main REPL loop
     - read_prompt(): Read a single prompt from the user
+    - read_multiline_prompt(): Read multi-line input with advanced editing
     - handle_special_command(): Process special commands (!multi, !edit, etc.)
     - handle_multi_line(): Handle multi-line input mode
     - handle_edit_command(): Open editor for prompt editing
@@ -418,25 +419,57 @@ class ChatInterface:
         click.echo("Type '!fragment <my_fragment> [<another_fragment> ...]' to insert one or more fragments")
 
     def read_prompt(self) -> str:
-        """Read a single prompt from the user."""
+        """
+        Read a single prompt from the user.
+
+        This is called for single-line input or for each line in basic multi-line mode.
+        Plugins can override this to provide custom input handling (e.g., with history).
+        """
         return click.prompt("", prompt_suffix="> " if not self.in_multi else "")
+
+    def read_multiline_prompt(self) -> Optional[str]:
+        """
+        Read a multi-line prompt from the user with advanced editing capabilities.
+
+        This is called when the user enters multi-line mode with !multi.
+        The default implementation returns None, which falls back to line-by-line input.
+
+        Plugins can override this to provide advanced multi-line editing with features like:
+        - Cursor movement across lines
+        - Command history
+        - Syntax highlighting
+
+        Returns:
+            The complete multi-line prompt text, or None to use default line-by-line mode.
+        """
+        return None
 
     def should_exit(self, prompt: str) -> bool:
         """Check if the user wants to exit."""
         return prompt.strip() in ("exit", "quit")
 
-    def handle_multi_line(self, prompt: str) -> bool:
+    def handle_multi_line(self, prompt: str) -> Union[tuple, bool, None]:
         """
         Handle multi-line input mode.
 
-        Returns True if we should continue to next iteration, False otherwise.
+        Returns:
+            - True if we should continue to next iteration (accumulating lines)
+            - False if not in multi-line mode
+            - tuple of (prompt, fragments, attachments) if advanced multi-line mode completed
         """
         if prompt.strip().startswith("!multi"):
-            self.in_multi = True
-            bits = prompt.strip().split()
-            if len(bits) > 1:
-                self.end_token = "!end {}".format(" ".join(bits[1:]))
-            return True
+            # Try advanced multi-line editor first
+            multiline_text = self.read_multiline_prompt()
+            if multiline_text is not None:
+                # Advanced editor provided the full text
+                return (multiline_text, [], [])
+            else:
+                # Fall back to line-by-line mode
+                self.in_multi = True
+                bits = prompt.strip().split()
+                if len(bits) > 1:
+                    self.end_token = "!end {}".format(" ".join(bits[1:]))
+                return True
         return False
 
     def handle_edit_command(self, prompt: str) -> Optional[str]:
@@ -565,7 +598,19 @@ class ChatInterface:
                 self.argument_attachments = []
 
             # Handle !multi command
-            if self.handle_multi_line(prompt):
+            multi_result = self.handle_multi_line(prompt)
+            if multi_result is True:
+                # Continue accumulating lines in basic mode
+                continue
+            elif isinstance(multi_result, tuple):
+                # Advanced multi-line editor provided complete input
+                prompt, fragments, attachments = multi_result
+                # Skip to execution (bypass other handlers for this prompt)
+                prompt = self.prepare_prompt(prompt)
+                if self.should_exit(prompt):
+                    break
+                response = self.execute_prompt(prompt, fragments, attachments)
+                self.display_response(response)
                 continue
 
             # Handle !edit command
